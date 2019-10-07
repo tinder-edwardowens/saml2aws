@@ -3,7 +3,7 @@ package saml2aws
 import (
 	"testing"
 
-	"github.com/versent/saml2aws/pkg/creds"
+	"github.com/tinder-edwardowens/saml2aws/pkg/creds"
 )
 
 func TestLoginDetails_Validate(t *testing.T) {

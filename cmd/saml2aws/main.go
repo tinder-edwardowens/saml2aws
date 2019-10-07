@@ -8,8 +8,8 @@ import (
 
 	"github.com/alecthomas/kingpin"
 	"github.com/sirupsen/logrus"
-	"github.com/versent/saml2aws/cmd/saml2aws/commands"
-	"github.com/versent/saml2aws/pkg/flags"
+	"github.com/tinder-edwardowens/saml2aws/cmd/saml2aws/commands"
+	"github.com/tinder-edwardowens/saml2aws/pkg/flags"
 )
 
 var (
@@ -48,7 +48,7 @@ func main() {
 
 	// Settings not related to commands
 	verbose := app.Flag("verbose", "Enable verbose logging").Bool()
-	provider := app.Flag("provider", "This flag is obsolete. See: https://github.com/Versent/saml2aws#configuring-idp-accounts").Short('i').Enum("AzureAD", "ADFS", "ADFS2", "Ping", "JumpCloud", "Okta", "OneLogin", "PSU", "KeyCloak")
+	provider := app.Flag("provider", "This flag is obsolete. See: https://github.com/tinder-edwardowens/saml2aws#configuring-idp-accounts").Short('i').Enum("AzureAD", "ADFS", "ADFS2", "Ping", "JumpCloud", "Okta", "OneLogin", "PSU", "KeyCloak")
 
 	// Common (to all commands) settings
 	commonFlags := new(flags.CommonFlags)
@@ -92,7 +92,6 @@ func main() {
 	cmdExec.Flag("exec-profile", "The AWS profile to utilize for command execution. Useful to allow the aws cli to perform secondary role assumption. (env: SAML2AWS_EXEC_PROFILE)").Envar("SAML2AWS_EXEC_PROFILE").StringVar(&execFlags.ExecProfile)
 	cmdLine := buildCmdList(cmdExec.Arg("command", "The command to execute."))
 
-
 	// `list` command and settings
 	cmdListRoles := app.Command("list-roles", "List available role ARNs.")
 	listRolesFlags := new(flags.LoginExecFlags)
@@ -114,7 +113,7 @@ func main() {
 
 	// will leave this here for a while during upgrade process
 	if *provider != "" {
-		fmt.Println("The --provider flag has been replaced with a new configure command. See https://github.com/Versent/saml2aws#adding-idp-accounts")
+		fmt.Println("The --provider flag has been replaced with a new configure command. See https://github.com/tinder-edwardowens/saml2aws#adding-idp-accounts")
 		os.Exit(1)
 	}
 
@@ -149,4 +148,3 @@ func main() {
 		os.Exit(1)
 	}
 }
-

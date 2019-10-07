@@ -15,10 +15,10 @@ import (
 	"github.com/PuerkitoBio/goquery"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
-	"github.com/versent/saml2aws/pkg/cfg"
-	"github.com/versent/saml2aws/pkg/creds"
-	"github.com/versent/saml2aws/pkg/prompter"
-	"github.com/versent/saml2aws/pkg/provider"
+	"github.com/tinder-edwardowens/saml2aws/pkg/cfg"
+	"github.com/tinder-edwardowens/saml2aws/pkg/creds"
+	"github.com/tinder-edwardowens/saml2aws/pkg/prompter"
+	"github.com/tinder-edwardowens/saml2aws/pkg/provider"
 )
 
 var logger = logrus.WithField("provider", "aad")
@@ -697,9 +697,9 @@ func (ac *Client) Authenticate(loginDetails *creds.LoginDetails) (string, error)
 	if err := json.Unmarshal([]byte(loginPasswordJson), &restartSAMLResp); err != nil {
 		return samlAssertion, errors.Wrap(err, "startSAML response unmarshal error")
 	}
-  if restartSAMLResp.URLGitHubFed != "" {
-			return samlAssertion, errors.Wrap(err, "login failed")
-  }
+	if restartSAMLResp.URLGitHubFed != "" {
+		return samlAssertion, errors.Wrap(err, "login failed")
+	}
 
 	// skip mfa
 	if loginPasswordSkipMfaResp.URLSkipMfaRegistration != "" {
@@ -759,7 +759,7 @@ func (ac *Client) Authenticate(loginDetails *creds.LoginDetails) (string, error)
 		}
 
 		//  mfa end
-    for i:=0;; i++{
+		for i := 0; ; i++ {
 			mfaReq = mfaRequest{
 				AuthMethodID: mfaResp.AuthMethodID,
 				Method:       "EndAuth",
@@ -771,9 +771,9 @@ func (ac *Client) Authenticate(loginDetails *creds.LoginDetails) (string, error)
 				verifyCode := prompter.StringRequired("Enter verification code")
 				mfaReq.AdditionalAuthData = verifyCode
 			}
-      if mfaReq.AuthMethodID == "PhoneAppNotification" && i==0 {
-        fmt.Println("Phone approval required.")
-      }
+			if mfaReq.AuthMethodID == "PhoneAppNotification" && i == 0 {
+				fmt.Println("Phone approval required.")
+			}
 			mfaReqJson, err := json.Marshal(mfaReq)
 			if err != nil {
 				return samlAssertion, err

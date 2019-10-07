@@ -96,7 +96,7 @@ Flags:
       --version                Show application version.
       --verbose                Enable verbose logging
   -i, --provider=PROVIDER      This flag is obsolete. See:
-                               https://github.com/Versent/saml2aws#configuring-idp-accounts
+                               https://github.com/tinder-edwardowens/saml2aws#configuring-idp-accounts
   -a, --idp-account="default"  The name of the configured IDP account. (env:
                                SAML2AWS_IDP_ACCOUNT)
       --idp-provider=IDP-PROVIDER
@@ -431,7 +431,7 @@ aws iam list-groups
 
 ## Building
 
-To build this software on osx clone to the repo to `$GOPATH/src/github.com/versent/saml2aws` and ensure you have `$GOPATH/bin` in your `$PATH`.
+To build this software on osx clone to the repo to `$GOPATH/src/github.com/tinder-edwardowens/saml2aws` and ensure you have `$GOPATH/bin` in your `$PATH`.
 
 ```
 make mod

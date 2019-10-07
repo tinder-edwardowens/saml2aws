@@ -11,8 +11,8 @@ import (
 	"github.com/Azure/go-ntlmssp"
 	"github.com/PuerkitoBio/goquery"
 	"github.com/sirupsen/logrus"
-	"github.com/versent/saml2aws/pkg/cfg"
-	"github.com/versent/saml2aws/pkg/creds"
+	"github.com/tinder-edwardowens/saml2aws/pkg/cfg"
+	"github.com/tinder-edwardowens/saml2aws/pkg/creds"
 )
 
 var logger = logrus.WithField("provider", "adfs2")

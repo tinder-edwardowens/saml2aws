@@ -1,4 +1,4 @@
-module github.com/versent/saml2aws
+module github.com/tinder-edwardowens/saml2aws
 
 go 1.13
 
@@ -45,7 +45,7 @@ require (
 	golang.org/x/net v0.0.0-20190916140828-c8589233b77d
 	golang.org/x/sys v0.0.0-20190919044723-0c1ff786ef13 // indirect
 	golang.org/x/text v0.3.2 // indirect
-	gopkg.in/AlecAivazis/survey.v1 v1.5.3 // indirect
+	gopkg.in/AlecAivazis/survey.v1 v1.5.3
 	gopkg.in/airbrake/gobrake.v2 v2.0.9 // indirect
 	gopkg.in/check.v1 v1.0.0-20190902080502-41f04d3bba15 // indirect
 	gopkg.in/gemnasium/logrus-airbrake-hook.v2 v2.1.2 // indirect

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"path"
 
-	"github.com/versent/saml2aws/pkg/creds"
+	"github.com/tinder-edwardowens/saml2aws/pkg/creds"
 )
 
 // LookupCredentials lookup an existing set of credentials and validate it.

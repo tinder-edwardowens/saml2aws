@@ -16,4 +16,4 @@ The path segments `/home/amazon_aws` in the above URL may vary.
 
 ## Limitations
 
-* Does **not** support application-level MFA, per [issue #118](https://github.com/Versent/saml2aws/issues/118#issuecomment-355688008)
+* Does **not** support application-level MFA, per [issue #118](https://github.com/tinder-edwardowens/saml2aws/issues/118#issuecomment-355688008)

@@ -8,9 +8,9 @@ import (
 
 	"github.com/PuerkitoBio/goquery"
 	"github.com/stretchr/testify/require"
-	"github.com/versent/saml2aws/mocks"
-	"github.com/versent/saml2aws/pkg/creds"
-	"github.com/versent/saml2aws/pkg/prompter"
+	"github.com/tinder-edwardowens/saml2aws/mocks"
+	"github.com/tinder-edwardowens/saml2aws/pkg/creds"
+	"github.com/tinder-edwardowens/saml2aws/pkg/prompter"
 )
 
 func TestMakeAbsoluteURL(t *testing.T) {

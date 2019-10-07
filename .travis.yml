@@ -2,7 +2,7 @@ language: go
 go:
     - "1.13"
 
-go_import_path: github.com/versent/saml2aws
+go_import_path: github.com/tinder-edwardowens/saml2aws
 
 install:
     - echo noop

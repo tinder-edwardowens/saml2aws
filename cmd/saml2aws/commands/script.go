@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"github.com/pkg/errors"
-	"github.com/versent/saml2aws/pkg/awsconfig"
-	"github.com/versent/saml2aws/pkg/flags"
+	"github.com/tinder-edwardowens/saml2aws/pkg/awsconfig"
+	"github.com/tinder-edwardowens/saml2aws/pkg/flags"
 )
 
 const bashTmpl = `export AWS_ACCESS_KEY_ID="{{ .AWSAccessKey }}"
