@@ -11,10 +11,10 @@ import (
 
 	"github.com/PuerkitoBio/goquery"
 	"github.com/pkg/errors"
-	"github.com/versent/saml2aws/pkg/cfg"
-	"github.com/versent/saml2aws/pkg/creds"
-	"github.com/versent/saml2aws/pkg/prompter"
-	"github.com/versent/saml2aws/pkg/provider"
+	"github.com/tinder-edwardowens/saml2aws/pkg/cfg"
+	"github.com/tinder-edwardowens/saml2aws/pkg/creds"
+	"github.com/tinder-edwardowens/saml2aws/pkg/prompter"
+	"github.com/tinder-edwardowens/saml2aws/pkg/provider"
 )
 
 // Client wrapper around ADFS enabling authentication and retrieval of assertions

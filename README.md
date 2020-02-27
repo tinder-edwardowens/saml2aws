@@ -489,7 +489,7 @@ aws iam list-groups
 
 ## Building
 
-To build this software on osx clone to the repo to `$GOPATH/src/github.com/versent/saml2aws` and ensure you have `$GOPATH/bin` in your `$PATH`.
+To build this software on osx clone to the repo to `$GOPATH/src/github.com/tinder-edwardowens/saml2aws` and ensure you have `$GOPATH/bin` in your `$PATH`.
 
 ```
 make mod

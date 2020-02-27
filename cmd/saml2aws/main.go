@@ -8,8 +8,8 @@ import (
 
 	"github.com/alecthomas/kingpin"
 	"github.com/sirupsen/logrus"
-	"github.com/versent/saml2aws/cmd/saml2aws/commands"
-	"github.com/versent/saml2aws/pkg/flags"
+	"github.com/tinder-edwardowens/saml2aws/cmd/saml2aws/commands"
+	"github.com/tinder-edwardowens/saml2aws/pkg/flags"
 )
 
 var (

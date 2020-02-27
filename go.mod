@@ -1,4 +1,4 @@
-module github.com/versent/saml2aws
+module github.com/tinder-edwardowens/saml2aws
 
 go 1.13
 
@@ -38,7 +38,6 @@ require (
 	github.com/stretchr/testify v1.4.0
 	github.com/tidwall/gjson v1.1.1
 	github.com/tidwall/match v1.0.0 // indirect
-	github.com/tinder-edwardowens/saml2aws v2.17.0+incompatible
 	golang.org/x/crypto v0.0.0-20190911031432-227b76d455e7 // indirect
 	golang.org/x/net v0.0.0-20190916140828-c8589233b77d
 	golang.org/x/sys v0.0.0-20190919044723-0c1ff786ef13 // indirect
