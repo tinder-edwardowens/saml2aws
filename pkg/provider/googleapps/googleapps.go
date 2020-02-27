@@ -2,6 +2,7 @@ package googleapps
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -60,7 +61,7 @@ func (kc *Client) Authenticate(loginDetails *creds.LoginDetails) (string, error)
 	authForm.Set("Passwd", loginDetails.Password)
 	authForm.Set("rawidentifier", loginDetails.Username)
 
-	responseDoc, err := kc.loadChallengePage(passwordURL+"?hl=en&loc=US", authURL, authForm)
+	responseDoc, err := kc.loadChallengePage(passwordURL+"?hl=en&loc=US", authURL, authForm, loginDetails)
 	if err != nil {
 		return "", errors.Wrap(err, "error loading challenge page")
 	}
@@ -81,13 +82,16 @@ func (kc *Client) Authenticate(loginDetails *creds.LoginDetails) (string, error)
 		captcha := prompter.String("Captcha", "")
 
 		captchaForm, captchaURL, err := extractInputsByFormID(responseDoc, "gaia_loginform")
+		if err != nil {
+			return "", errors.Wrap(err, "error extracting captcha")
+		}
 
 		logger.Debugf("captchaURL: %s", captchaURL)
 
 		captchaForm.Set("Passwd", loginDetails.Password)
 		captchaForm.Set("logincaptcha", captcha)
 
-		responseDoc, err = kc.loadChallengePage(captchaURL+"?hl=en&loc=US", captchaURL, captchaForm)
+		responseDoc, err = kc.loadChallengePage(captchaURL+"?hl=en&loc=US", captchaURL, captchaForm, loginDetails)
 		if err != nil {
 			return "", errors.Wrap(err, "error loading challenge page")
 		}
@@ -182,7 +186,7 @@ func (kc *Client) loadLoginPage(submitURL string, referer string, authForm url.V
 	return loginURL, loginForm, err
 }
 
-func (kc *Client) loadChallengePage(submitURL string, referer string, authForm url.Values) (*goquery.Document, error) {
+func (kc *Client) loadChallengePage(submitURL string, referer string, authForm url.Values, loginDetails *creds.LoginDetails) (*goquery.Document, error) {
 
 	req, err := http.NewRequest("POST", submitURL, strings.NewReader(authForm.Encode()))
 	if err != nil {
@@ -232,7 +236,10 @@ func (kc *Client) loadChallengePage(submitURL string, referer string, authForm u
 		switch {
 		case strings.Contains(secondActionURL, "challenge/totp/"): // handle TOTP challenge
 
-			var token = prompter.RequestSecurityCode("000000")
+			var token = loginDetails.MFAToken
+			if token == "" {
+				token = prompter.RequestSecurityCode("000000")
+			}
 
 			responseForm.Set("Pin", token)
 			responseForm.Set("TrustDevice", "on") // Don't ask again on this computer
@@ -247,6 +254,24 @@ func (kc *Client) loadChallengePage(submitURL string, referer string, authForm u
 
 			return kc.loadResponsePage(u.String(), submitURL, responseForm)
 
+		case strings.Contains(secondActionURL, "challenge/sk/"): // handle u2f challenge
+			facet := u.Scheme + "://" + u.Host
+			challengeNonce := responseForm.Get("id-challenge")
+			appId, data := extractKeyHandles(doc, challengeNonce)
+			u2fClient, err := NewU2FClient(challengeNonce, appId, facet, data[0], &U2FDeviceFinder{})
+			if err != nil {
+				return nil, errors.Wrap(err, "Failed to prompt for second factor.")
+			}
+
+			response, err := u2fClient.ChallengeU2F()
+			if err != nil {
+				return nil, errors.Wrap(err, "Second factor failed.")
+			}
+
+			responseForm.Set("id-assertion", response)
+			responseForm.Set("TrustDevice", "on")
+
+			return kc.loadResponsePage(u.String(), submitURL, responseForm)
 		case strings.Contains(secondActionURL, "challenge/az/"): // handle phone challenge
 
 			dataAttrs := extractDataAttributes(doc, "div[data-context]", []string{"data-context", "data-gapi-url", "data-tx-id", "data-api-key", "data-tx-lifetime"})
@@ -281,7 +306,7 @@ func (kc *Client) loadChallengePage(submitURL string, referer string, authForm u
 
 		u.Path = skipActionURL
 
-		return kc.loadAlternateChallengePage(u.String(), submitURL, skipResponseForm)
+		return kc.loadAlternateChallengePage(u.String(), submitURL, skipResponseForm, loginDetails)
 
 	}
 
@@ -289,7 +314,7 @@ func (kc *Client) loadChallengePage(submitURL string, referer string, authForm u
 
 }
 
-func (kc *Client) loadAlternateChallengePage(submitURL string, referer string, authForm url.Values) (*goquery.Document, error) {
+func (kc *Client) loadAlternateChallengePage(submitURL string, referer string, authForm url.Values, loginDetails *creds.LoginDetails) (*goquery.Document, error) {
 
 	req, err := http.NewRequest("POST", submitURL, strings.NewReader(authForm.Encode()))
 	if err != nil {
@@ -343,7 +368,7 @@ func (kc *Client) loadAlternateChallengePage(submitURL string, referer string, a
 	u, _ := url.Parse(submitURL)
 	u.Path = newActionURL
 
-	return kc.loadChallengePage(u.String(), submitURL, responseForm)
+	return kc.loadChallengePage(u.String(), submitURL, responseForm, loginDetails)
 }
 
 func (kc *Client) postJSON(submitURL string, values map[string]string, referer string) (*http.Response, error) {
@@ -483,4 +508,86 @@ func extractDataAttributes(doc *goquery.Document, query string, attrsToSelect []
 	})
 
 	return dataAttrs
+}
+
+func extractKeyHandles(doc *goquery.Document, challengeTxt string) (string, []string) {
+	appId := ""
+	keyHandles := []string{}
+	result := map[string]interface{}{}
+	doc.Find("div[jsname=C0oDBd]").Each(func(_ int, sel *goquery.Selection) {
+		val, ok := sel.Attr("data-challenge-ui")
+		if ok {
+			firstIdx := strings.Index(val, "{")
+			lastIdx := strings.LastIndex(val, "}")
+			obj := []byte(val[firstIdx : lastIdx+1])
+			json.Unmarshal(obj, &result)
+
+			// Key handles
+			for _, val := range result {
+				list, ok := val.([]interface{})
+				if !ok {
+					continue
+				}
+				tmpId, stringList := filterKeyHandleList(list, challengeTxt)
+				if tmpId != "" {
+					appId = tmpId
+				}
+				if len(stringList) != 0 {
+					keyHandles = append(keyHandles, stringList...)
+				}
+			}
+		}
+	})
+	return appId, keyHandles
+}
+
+func filterKeyHandleList(list []interface{}, challengeTxt string) (string, []string) {
+	appId := ""
+	newList := []string{}
+	for _, entry := range list {
+		if entry == nil {
+			continue
+		}
+		moreList, ok := entry.([]interface{})
+		if ok {
+			id, l := filterKeyHandleList(moreList, challengeTxt)
+			if id != "" {
+				appId = id
+			}
+			newList = append(newList, l...)
+			continue
+		}
+		str, ok := entry.(string)
+		if !ok {
+			continue
+		}
+		if appId == "" {
+			appId = isAppId(str)
+		}
+		if isKeyHandle(str, challengeTxt) {
+			newList = append(newList, str)
+		}
+	}
+	return appId, newList
+}
+
+func isKeyHandle(key, challengeTxt string) bool {
+	_, err := base64.StdEncoding.DecodeString(key)
+	if err != nil {
+		return false
+	}
+	return key != challengeTxt
+}
+
+func isAppId(val string) string {
+	obj := map[string]interface{}{}
+	err := json.Unmarshal([]byte(val), &obj)
+	if err != nil {
+		return ""
+	}
+	appId, ok := obj["appid"].(string)
+	if !ok {
+		return ""
+	}
+	return appId
 }

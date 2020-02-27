@@ -8,7 +8,7 @@ import (
 
 	"github.com/PuerkitoBio/goquery"
 	"github.com/pkg/errors"
-	"github.com/tinder-edwardowens/saml2aws/pkg/provider"
+	"github.com/versent/saml2aws/pkg/provider"
 )
 
 type Form struct {

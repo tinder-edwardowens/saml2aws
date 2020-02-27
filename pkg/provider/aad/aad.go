@@ -1,7 +1,6 @@
 package aad
 
 import (
-	"bufio"
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
@@ -14,14 +13,11 @@ import (
 
 	"github.com/PuerkitoBio/goquery"
 	"github.com/pkg/errors"
-	"github.com/sirupsen/logrus"
-	"github.com/tinder-edwardowens/saml2aws/pkg/cfg"
-	"github.com/tinder-edwardowens/saml2aws/pkg/creds"
-	"github.com/tinder-edwardowens/saml2aws/pkg/prompter"
-	"github.com/tinder-edwardowens/saml2aws/pkg/provider"
+	"github.com/versent/saml2aws/pkg/cfg"
+	"github.com/versent/saml2aws/pkg/creds"
+	"github.com/versent/saml2aws/pkg/prompter"
+	"github.com/versent/saml2aws/pkg/provider"
 )
-
-var logger = logrus.WithField("provider", "aad")
 
 // Client wrapper around AzureAD enabling authentication and retrieval of assertions
 type Client struct {
@@ -645,14 +641,13 @@ func (ac *Client) Authenticate(loginDetails *creds.LoginDetails) (string, error)
 
 	// data is embeded javascript object
 	// <script><![CDATA[  $Config=......; ]]>
-	scanner := bufio.NewScanner(res.Body)
+	resBody, _ := ioutil.ReadAll(res.Body)
+	resBodyStr := string(resBody)
 	var startSAMLJson string
-	for scanner.Scan() {
-		scanLine := strings.TrimSpace(scanner.Text())
-		if strings.Contains(scanLine, "$Config") {
-			startSAMLJson = scanLine[strings.Index(scanLine, "$Config=")+8 : strings.LastIndex(scanLine, ";")]
-			break
-		}
+	if strings.Contains(resBodyStr, "$Config") {
+		startIndex := strings.Index(resBodyStr, "$Config=") + 8
+		endIndex := startIndex + strings.Index(resBodyStr[startIndex:], ";")
+		startSAMLJson = resBodyStr[startIndex:endIndex]
 	}
 	var startSAMLResp startSAMLResponse
 	if err := json.Unmarshal([]byte(startSAMLJson), &startSAMLResp); err != nil {
@@ -665,7 +660,18 @@ func (ac *Client) Authenticate(loginDetails *creds.LoginDetails) (string, error)
 	loginValues.Set("ctx", startSAMLResp.SCtx)
 	loginValues.Set("login", loginDetails.Username)
 	loginValues.Set("passwd", loginDetails.Password)
-	passwordLoginRequest, err := http.NewRequest("POST", startSAMLResp.URLPost, strings.NewReader(loginValues.Encode()))
+
+	// Sometimes AAD response may contain "post url" as a relative url
+	// in this case, prepend the url scheme and host, of the URL we requested
+	var urlPost string
+	if strings.HasPrefix(startSAMLResp.URLPost, "/") {
+		urlPost = res.Request.URL.Scheme + "://" + res.Request.URL.Host + startSAMLResp.URLPost
+	} else {
+		urlPost = startSAMLResp.URLPost
+	}
+
+	passwordLoginRequest, err := http.NewRequest("POST", urlPost, strings.NewReader(loginValues.Encode()))
+
 	if err != nil {
 		return samlAssertion, errors.Wrap(err, "error retrieving login results")
 	}
@@ -674,19 +680,30 @@ func (ac *Client) Authenticate(loginDetails *creds.LoginDetails) (string, error)
 	if err != nil {
 		return samlAssertion, errors.Wrap(err, "error retrieving login results")
 	}
+	resBody, _ = ioutil.ReadAll(res.Body)
+	resBodyStr = string(resBody)
+
+	// require reprocess
+	if strings.Contains(resBodyStr, "<form") {
+		res, err = ac.reProcess(resBodyStr)
+		if err != nil {
+			return samlAssertion, errors.Wrap(err, "error retrieving login reprocess results")
+		}
+		resBody, _ = ioutil.ReadAll(res.Body)
+		resBodyStr = string(resBody)
+	}
+
 	// data is embeded javascript object
 	// <script><![CDATA[  $Config=......; ]]>
-	scanner = bufio.NewScanner(res.Body)
 	var loginPasswordJson string
-	for scanner.Scan() {
-		scanLine := strings.TrimSpace(scanner.Text())
-		if strings.Contains(scanLine, "$Config") {
-			loginPasswordJson = scanLine[strings.Index(scanLine, "$Config=")+8 : strings.LastIndex(scanLine, ";")]
-			break
-		}
+	if strings.Contains(resBodyStr, "$Config") {
+		startIndex := strings.Index(resBodyStr, "$Config=") + 8
+		endIndex := startIndex + strings.Index(resBodyStr[startIndex:], ";")
+		loginPasswordJson = resBodyStr[startIndex:endIndex]
 	}
 	var loginPasswordResp passwordLoginResponse
 	var loginPasswordSkipMfaResp SkipMfaResponse
+
 	if err := json.Unmarshal([]byte(loginPasswordJson), &loginPasswordResp); err != nil {
 		return samlAssertion, errors.Wrap(err, "loginPassword response unmarshal error")
 	}
@@ -697,20 +714,18 @@ func (ac *Client) Authenticate(loginDetails *creds.LoginDetails) (string, error)
 	if err := json.Unmarshal([]byte(loginPasswordJson), &restartSAMLResp); err != nil {
 		return samlAssertion, errors.Wrap(err, "startSAML response unmarshal error")
 	}
-	if restartSAMLResp.URLGitHubFed != "" {
-		return samlAssertion, errors.Wrap(err, "login failed")
-	}
 
-	// skip mfa
+	mfas := loginPasswordResp.ArrUserProofs
+
+	// If there's an explicit option to skip MFA, do so
 	if loginPasswordSkipMfaResp.URLSkipMfaRegistration != "" {
 		res, err = ac.client.Get(loginPasswordSkipMfaResp.URLSkipMfaRegistration)
 		if err != nil {
 			return samlAssertion, errors.Wrap(err, "error retrieving skip mfa results")
 		}
-	} else {
-
-		// start mfa
-		mfas := loginPasswordResp.ArrUserProofs
+	} else if len(mfas) != 0 {
+		// There's no explicit option to skip MFA, and MFA options are available
+		// Start MFA
 		if len(mfas) == 0 {
 			return samlAssertion, errors.Wrap(err, "mfa not found")
 		}
@@ -746,7 +761,7 @@ func (ac *Client) Authenticate(loginDetails *creds.LoginDetails) (string, error)
 		if err != nil {
 			return samlAssertion, errors.Wrap(err, "error retrieving begin mfa")
 		}
-		mfaBeginJson := make([]byte, res.ContentLength, res.ContentLength)
+		mfaBeginJson := make([]byte, res.ContentLength)
 		if n, err := res.Body.Read(mfaBeginJson); err != nil && err != io.EOF || n != int(res.ContentLength) {
 			return samlAssertion, errors.Wrap(err, "mfa BeginAuth response error")
 		}
@@ -787,7 +802,7 @@ func (ac *Client) Authenticate(loginDetails *creds.LoginDetails) (string, error)
 			if err != nil {
 				return samlAssertion, errors.Wrap(err, "error retrieving begin mfa")
 			}
-			mfaJson := make([]byte, res.ContentLength, res.ContentLength)
+			mfaJson := make([]byte, res.ContentLength)
 			if n, err := res.Body.Read(mfaJson); err != nil && err != io.EOF || n != int(res.ContentLength) {
 				return samlAssertion, errors.Wrap(err, "mfa EndAuth response error")
 			}
@@ -828,26 +843,55 @@ func (ac *Client) Authenticate(loginDetails *creds.LoginDetails) (string, error)
 		}
 		// data is embeded javascript object
 		// <script><![CDATA[  $Config=......; ]]>
-		scanner = bufio.NewScanner(res.Body)
+		resBody, _ = ioutil.ReadAll(res.Body)
+		resBodyStr = string(resBody)
+
 		var ProcessAuthJson string
-		for scanner.Scan() {
-			scanLine := strings.TrimSpace(scanner.Text())
-			if strings.Contains(scanLine, "$Config") {
-				ProcessAuthJson = scanLine[strings.Index(scanLine, "$Config=")+8 : strings.LastIndex(scanLine, ";")]
-				break
-			}
+		if strings.Contains(resBodyStr, "$Config") {
+			startIndex := strings.Index(resBodyStr, "$Config=") + 8
+			endIndex := startIndex + strings.Index(resBodyStr[startIndex:], ";")
+			ProcessAuthJson = resBodyStr[startIndex:endIndex]
 		}
 		var processAuthResp processAuthResponse
 		if err := json.Unmarshal([]byte(ProcessAuthJson), &processAuthResp); err != nil {
 			return samlAssertion, errors.Wrap(err, "ProcessAuth response unmarshal error")
 		}
 
-		// kmsi
+		// After performing MFA we'll always be prompted with KMSI (Keep Me Signed In) page
 		KmsiURL := res.Request.URL.Scheme + "://" + res.Request.URL.Host + processAuthResp.URLPost
 		KmsiValues := url.Values{}
 		KmsiValues.Set("flowToken", processAuthResp.SFT)
 		KmsiValues.Set("ctx", processAuthResp.SCtx)
+		KmsiValues.Set("LoginOptions", "1")
+		KmsiRequest, err := http.NewRequest("POST", KmsiURL, strings.NewReader(KmsiValues.Encode()))
+		if err != nil {
+			return samlAssertion, errors.Wrap(err, "error retrieving kmsi results")
+		}
+		KmsiRequest.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+		ac.client.DisableFollowRedirect()
+		res, err = ac.client.Do(KmsiRequest)
+		if err != nil {
+			return samlAssertion, errors.Wrap(err, "error retrieving kmsi results")
+		}
+		ac.client.EnableFollowRedirect()
+	} else {
+		// There was no explicit link to skip MFA
+		// and there were no MFA options available for us to process
+		// This can happen if MFA is enabled, but we're accessing from a MFA trusted IP
+		// See https://docs.microsoft.com/en-us/azure/active-directory/authentication/howto-mfa-mfasettings#targetText=MFA%20service%20settings,-Settings%20for%20app&targetText=Service%20settings%20can%20be%20accessed,Additional%20cloud-based%20MFA%20settings.
+		// Proceed with login as normal
+	}
 
+	// If we've been prompted with KMSI despite not going via MFA flow
+	// Azure can do this if MFA is enabled but
+	//  - we're accessing from an MFA whitelisted / trusted IP
+	//  - we've been exempted from a Conditional Access Policy
+	if loginPasswordResp.URLPost == "/kmsi" {
+		KmsiURL := res.Request.URL.Scheme + "://" + res.Request.URL.Host + loginPasswordResp.URLPost
+		KmsiValues := url.Values{}
+		KmsiValues.Set("flowToken", loginPasswordResp.SFT)
+		KmsiValues.Set("ctx", loginPasswordResp.SCtx)
+		KmsiValues.Set("LoginOptions", "1")
 		KmsiRequest, err := http.NewRequest("POST", KmsiURL, strings.NewReader(KmsiValues.Encode()))
 		if err != nil {
 			return samlAssertion, errors.Wrap(err, "error retrieving kmsi results")
@@ -935,6 +979,9 @@ func (ac *Client) Authenticate(loginDetails *creds.LoginDetails) (string, error)
 	}
 
 	req, err = http.NewRequest("GET", SAMLRequestURL, nil)
+	if err != nil {
+		return samlAssertion, errors.Wrap(err, "error building get request")
+	}
 
 	res, err = ac.client.Do(req)
 	if err != nil {
@@ -943,11 +990,11 @@ func (ac *Client) Authenticate(loginDetails *creds.LoginDetails) (string, error)
 
 	// if mfa skipped then get $Config and urlSkipMfaRegistration
 	// get urlSkipMfaRegistraition to return saml assertion
-	resBody, err := ioutil.ReadAll(res.Body)
+	resBody, err = ioutil.ReadAll(res.Body)
 	if err != nil {
 		return samlAssertion, errors.Wrap(err, "error oidc login response read")
 	}
-	resBodyStr := string(resBody)
+	resBodyStr = string(resBody)
 	if strings.Contains(resBodyStr, "urlSkipMfaRegistration") {
 		var samlAssertionSkipMfaResp SkipMfaResponse
 		var skipMfaJson string
@@ -991,8 +1038,72 @@ func (ac *Client) Authenticate(loginDetails *creds.LoginDetails) (string, error)
 			}
 		}
 	})
-	if samlAssertion == "" {
-		return samlAssertion, fmt.Errorf("failed get SAMLAssersion")
+	if samlAssertion != "" {
+		return samlAssertion, nil
 	}
-	return samlAssertion, nil
+	res, err = ac.reProcess(resBodyStr)
+	if err != nil {
+		return samlAssertion, errors.Wrap(err, "failed to saml request reprocess")
+	}
+	resBody, _ = ioutil.ReadAll(res.Body)
+	resBodyStr = string(resBody)
+	doc, err = goquery.NewDocumentFromReader(strings.NewReader(resBodyStr))
+	if err != nil {
+		return samlAssertion, errors.Wrap(err, "failed to build document from result body")
+	}
+	doc.Find("input").Each(func(i int, s *goquery.Selection) {
+		attrName, ok := s.Attr("name")
+		if !ok {
+			return
+		}
+		if attrName == "SAMLResponse" {
+			samlAssertion, ok = s.Attr("value")
+			if !ok {
+				return
+			}
+		}
+	})
+	if samlAssertion != "" {
+		return samlAssertion, nil
+	}
+
+	return samlAssertion, errors.New("failed get SAMLAssersion")
+}
+
+func (ac *Client) reProcess(resBodyStr string) (*http.Response, error) {
+	doc, err := goquery.NewDocumentFromReader(strings.NewReader(resBodyStr))
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to build document from response")
+	}
+
+	var action, ctx, flowToken string
+	doc.Find("form").Each(func(i int, s *goquery.Selection) {
+		action, _ = s.Attr("action")
+	})
+	doc.Find("input").Each(func(i int, s *goquery.Selection) {
+		attrName, ok := s.Attr("name")
+		if !ok {
+			return
+		}
+		if attrName == "ctx" {
+			ctx, _ = s.Attr("value")
+		}
+		if attrName == "flowtoken" {
+			flowToken, _ = s.Attr("value")
+		}
+	})
+
+	reprocessValues := url.Values{}
+	reprocessValues.Set("ctx", ctx)
+	reprocessValues.Set("flowtoken", flowToken)
+	reprocessRequest, err := http.NewRequest("post", action, strings.NewReader(reprocessValues.Encode()))
+	if err != nil {
+		return nil, errors.Wrap(err, "error reprocess create httpRequest")
+	}
+	reprocessRequest.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+	res, err := ac.client.Do(reprocessRequest)
+	if err != nil {
+		return res, errors.Wrap(err, "error reprocess results")
+	}
+	return res, nil
 }

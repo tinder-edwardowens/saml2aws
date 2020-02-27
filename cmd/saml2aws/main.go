@@ -8,8 +8,8 @@ import (
 
 	"github.com/alecthomas/kingpin"
 	"github.com/sirupsen/logrus"
-	"github.com/tinder-edwardowens/saml2aws/cmd/saml2aws/commands"
-	"github.com/tinder-edwardowens/saml2aws/pkg/flags"
+	"github.com/versent/saml2aws/cmd/saml2aws/commands"
+	"github.com/versent/saml2aws/pkg/flags"
 )
 
 var (
@@ -48,22 +48,23 @@ func main() {
 
 	// Settings not related to commands
 	verbose := app.Flag("verbose", "Enable verbose logging").Bool()
-	provider := app.Flag("provider", "This flag is obsolete. See: https://github.com/tinder-edwardowens/saml2aws#configuring-idp-accounts").Short('i').Enum("AzureAD", "ADFS", "ADFS2", "Ping", "JumpCloud", "Okta", "OneLogin", "PSU", "KeyCloak")
+	provider := app.Flag("provider", "This flag is obsolete. See: https://github.com/Versent/saml2aws#configuring-idp-accounts").Short('i').Enum("Akamai", "AzureAD", "ADFS", "ADFS2", "Ping", "JumpCloud", "Okta", "OneLogin", "PSU", "KeyCloak")
 
 	// Common (to all commands) settings
 	commonFlags := new(flags.CommonFlags)
 	app.Flag("idp-account", "The name of the configured IDP account. (env: SAML2AWS_IDP_ACCOUNT)").Envar("SAML2AWS_IDP_ACCOUNT").Short('a').Default("default").StringVar(&commonFlags.IdpAccount)
-	app.Flag("idp-provider", "The configured IDP provider. (env: SAML2AWS_IDP_PROVIDER)").Envar("SAML2AWS_IDP_PROVIDER").EnumVar(&commonFlags.IdpProvider, "AzureAD", "ADFS", "ADFS2", "Ping", "JumpCloud", "Okta", "OneLogin", "PSU", "KeyCloak", "F5APM", "Shibboleth")
+	app.Flag("idp-provider", "The configured IDP provider. (env: SAML2AWS_IDP_PROVIDER)").Envar("SAML2AWS_IDP_PROVIDER").EnumVar(&commonFlags.IdpProvider, "Akamai", "AzureAD", "ADFS", "ADFS2", "GoogleApps", "Ping", "JumpCloud", "Okta", "OneLogin", "PSU", "KeyCloak", "F5APM", "Shibboleth", "ShibbolethECP")
 	app.Flag("mfa", "The name of the mfa. (env: SAML2AWS_MFA)").Envar("SAML2AWS_MFA").StringVar(&commonFlags.MFA)
 	app.Flag("skip-verify", "Skip verification of server certificate. (env: SAML2AWS_SKIP_VERIFY)").Envar("SAML2AWS_SKIP_VERIFY").Short('s').BoolVar(&commonFlags.SkipVerify)
 	app.Flag("url", "The URL of the SAML IDP server used to login. (env: SAML2AWS_URL)").Envar("SAML2AWS_URL").StringVar(&commonFlags.URL)
 	app.Flag("username", "The username used to login. (env: SAML2AWS_USERNAME)").Envar("SAML2AWS_USERNAME").StringVar(&commonFlags.Username)
 	app.Flag("password", "The password used to login. (env: SAML2AWS_PASSWORD)").Envar("SAML2AWS_PASSWORD").StringVar(&commonFlags.Password)
-	app.Flag("mfa-token", "The current MFA token (supported in Keycloak, ADFS). (env: SAML2AWS_MFA_TOKEN)").Envar("SAML2AWS_MFA_TOKEN").StringVar(&commonFlags.MFAToken)
+	app.Flag("mfa-token", "The current MFA token (supported in Keycloak, ADFS, GoogleApps). (env: SAML2AWS_MFA_TOKEN)").Envar("SAML2AWS_MFA_TOKEN").StringVar(&commonFlags.MFAToken)
 	app.Flag("role", "The ARN of the role to assume. (env: SAML2AWS_ROLE)").Envar("SAML2AWS_ROLE").StringVar(&commonFlags.RoleArn)
 	app.Flag("aws-urn", "The URN used by SAML when you login. (env: SAML2AWS_AWS_URN)").Envar("SAML2AWS_AWS_URN").StringVar(&commonFlags.AmazonWebservicesURN)
 	app.Flag("skip-prompt", "Skip prompting for parameters during login.").BoolVar(&commonFlags.SkipPrompt)
 	app.Flag("session-duration", "The duration of your AWS Session. (env: SAML2AWS_SESSION_DURATION)").Envar("SAML2AWS_SESSION_DURATION").IntVar(&commonFlags.SessionDuration)
+	app.Flag("disable-keychain", "Do not use keychain at all.").Envar("SAML2AWS_DISABLE_KEYCHAIN").BoolVar(&commonFlags.DisableKeychain)
 
 	// `configure` command and settings
 	cmdConfigure := app.Command("configure", "Configure a new IDP account.")
@@ -82,6 +83,8 @@ func main() {
 	loginFlags.CommonFlags = commonFlags
 	cmdLogin.Flag("profile", "The AWS profile to save the temporary credentials. (env: SAML2AWS_PROFILE)").Short('p').Envar("SAML2AWS_PROFILE").StringVar(&commonFlags.Profile)
 	cmdLogin.Flag("duo-mfa-option", "The MFA option you want to use to authenticate with").Envar("SAML2AWS_DUO_MFA_OPTION").EnumVar(&loginFlags.DuoMFAOption, "Passcode", "Duo Push")
+	cmdLogin.Flag("client-id", "OneLogin client id, used to generate API access token. (env: ONELOGIN_CLIENT_ID)").Envar("ONELOGIN_CLIENT_ID").StringVar(&commonFlags.ClientID)
+	cmdLogin.Flag("client-secret", "OneLogin client secret, used to generate API access token. (env: ONELOGIN_CLIENT_SECRET)").Envar("ONELOGIN_CLIENT_SECRET").StringVar(&commonFlags.ClientSecret)
 	cmdLogin.Flag("force", "Refresh credentials even if not expired.").BoolVar(&loginFlags.Force)
 
 	// `exec` command and settings
@@ -91,6 +94,13 @@ func main() {
 	cmdExec.Flag("profile", "The AWS profile to save the temporary credentials. (env: SAML2AWS_PROFILE)").Envar("SAML2AWS_PROFILE").Short('p').StringVar(&commonFlags.Profile)
 	cmdExec.Flag("exec-profile", "The AWS profile to utilize for command execution. Useful to allow the aws cli to perform secondary role assumption. (env: SAML2AWS_EXEC_PROFILE)").Envar("SAML2AWS_EXEC_PROFILE").StringVar(&execFlags.ExecProfile)
 	cmdLine := buildCmdList(cmdExec.Arg("command", "The command to execute."))
+
+	// `console` command and settings
+	cmdConsole := app.Command("console", "Console will open the aws console after logging in.")
+	consoleFlags := new(flags.LoginExecFlags)
+	consoleFlags.CommonFlags = commonFlags
+	cmdConsole.Flag("profile", "The AWS profile to save the temporary credentials. (env: SAML2AWS_PROFILE)").Envar("SAML2AWS_PROFILE").Short('p').StringVar(&commonFlags.Profile)
+	cmdConsole.Flag("force", "Refresh credentials even if not expired.").BoolVar(&consoleFlags.Force)
 
 	// `list` command and settings
 	cmdListRoles := app.Command("list-roles", "List available role ARNs.")
@@ -113,7 +123,7 @@ func main() {
 
 	// will leave this here for a while during upgrade process
 	if *provider != "" {
-		fmt.Println("The --provider flag has been replaced with a new configure command. See https://github.com/tinder-edwardowens/saml2aws#adding-idp-accounts")
+		fmt.Println("The --provider flag has been replaced with a new configure command. See https://github.com/Versent/saml2aws#adding-idp-accounts")
 		os.Exit(1)
 	}
 
@@ -137,6 +147,8 @@ func main() {
 		err = commands.Login(loginFlags)
 	case cmdExec.FullCommand():
 		err = commands.Exec(execFlags, *cmdLine)
+	case cmdConsole.FullCommand():
+		err = commands.Console(consoleFlags)
 	case cmdListRoles.FullCommand():
 		err = commands.ListRoles(listRolesFlags)
 	case cmdConfigure.FullCommand():

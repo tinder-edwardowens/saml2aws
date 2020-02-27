@@ -49,12 +49,15 @@ func ListRoles(loginFlags *flags.LoginExecFlags) error {
 	if samlAssertion == "" {
 		fmt.Println("Response did not contain a valid SAML assertion")
 		fmt.Println("Please check your username and password is correct")
+		fmt.Println("To see the output follow the instructions in https://github.com/Versent/saml2aws#debugging-issues-with-idps")
 		os.Exit(1)
 	}
 
-	err = credentials.SaveCredentials(loginDetails.URL, loginDetails.Username, loginDetails.Password)
-	if err != nil {
-		return errors.Wrap(err, "error storing password in keychain")
+	if !loginFlags.CommonFlags.DisableKeychain {
+		err = credentials.SaveCredentials(loginDetails.URL, loginDetails.Username, loginDetails.Password)
+		if err != nil {
+			return errors.Wrap(err, "error storing password in keychain")
+		}
 	}
 
 	data, err := base64.StdEncoding.DecodeString(samlAssertion)
@@ -87,7 +90,7 @@ func ListRoles(loginFlags *flags.LoginExecFlags) error {
 func listRoles(awsRoles []*saml2aws.AWSRole, samlAssertion string, loginFlags *flags.LoginExecFlags) error {
 	awsAccounts, err := saml2aws.ParseAWSAccounts(samlAssertion)
 	if err != nil {
-		errors.Wrap(err, "error parsing aws role accounts")
+		return errors.Wrap(err, "error parsing aws role accounts")
 	}
 
 	saml2aws.AssignPrincipals(awsRoles, awsAccounts)

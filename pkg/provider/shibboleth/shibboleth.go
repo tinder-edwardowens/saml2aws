@@ -13,15 +13,12 @@ import (
 
 	"github.com/PuerkitoBio/goquery"
 	"github.com/pkg/errors"
-	"github.com/sirupsen/logrus"
 	"github.com/tidwall/gjson"
 	"github.com/tinder-edwardowens/saml2aws/pkg/cfg"
 	"github.com/tinder-edwardowens/saml2aws/pkg/creds"
 	"github.com/tinder-edwardowens/saml2aws/pkg/prompter"
 	"github.com/tinder-edwardowens/saml2aws/pkg/provider"
 )
-
-var logger = logrus.WithField("provider", "shibboleth")
 
 // Client wrapper around Shibboleth enabling authentication and retrieval of assertions
 type Client struct {
